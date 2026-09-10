@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect } from 'react'
+import { createServerFn } from '@tanstack/react-start'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Instagram,
@@ -18,6 +19,68 @@ import {
 } from 'lucide-react'
 
 export const Route = createFileRoute('/')({ component: App })
+
+// Server function: runs only on the server (Vercel), never ships the Brevo
+// API key to the browser. Adds/updates the contact in Brevo and sends Juan
+// a quick heads-up email. Both Brevo calls are best-effort — a hiccup on the
+// notification email should never block the visitor's signup from counting.
+const subscribeLead = createServerFn({ method: 'POST' })
+  .validator((data: unknown) => {
+    const { name, email } = (data ?? {}) as { name?: string; email?: string }
+    const cleanEmail = (email ?? '').trim().toLowerCase()
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      throw new Error('Correo inválido')
+    }
+    return { name: (name ?? '').trim().slice(0, 100), email: cleanEmail }
+  })
+  .handler(async ({ data }) => {
+    const apiKey = process.env.BREVO_API_KEY
+    if (!apiKey) throw new Error('Falta configurar BREVO_API_KEY en Vercel')
+    const listId = process.env.BREVO_LIST_ID
+    const notifyEmail = process.env.NOTIFY_EMAIL || 'juan13fuenmayor@gmail.com'
+
+    const contactRes = await fetch('https://api.brevo.com/v3/contacts', {
+      method: 'POST',
+      headers: {
+        'api-key': apiKey,
+        'content-type': 'application/json',
+        accept: 'application/json',
+      },
+      body: JSON.stringify({
+        email: data.email,
+        attributes: data.name ? { FIRSTNAME: data.name } : undefined,
+        listIds: listId ? [Number(listId)] : undefined,
+        updateEnabled: true,
+      }),
+    })
+    if (!contactRes.ok) {
+      console.error('Brevo contact error', contactRes.status, await contactRes.text())
+      throw new Error('No se pudo registrar el contacto')
+    }
+
+    try {
+      await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': apiKey,
+          'content-type': 'application/json',
+          accept: 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: 'Web Juan Fuenmayor', email: 'juan13fuenmayor@gmail.com' },
+          to: [{ email: notifyEmail }],
+          subject: 'Nuevo registro en juanfuenmayor.com',
+          htmlContent: `<p>Nuevo contacto desde la página web:</p><p><strong>Nombre:</strong> ${
+            data.name || '(sin nombre)'
+          }<br/><strong>Correo:</strong> ${data.email}</p>`,
+        }),
+      })
+    } catch (err) {
+      console.error('Brevo notify error', err)
+    }
+
+    return { ok: true as const }
+  })
 
 const WHATSAPP_URL =
   'https://wa.me/17867247937?text=Quiero%20mi%20asesor%C3%ADa%20gratuita'
@@ -459,6 +522,79 @@ function Level5x() {
   )
 }
 
+function NewsletterForm() {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle')
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setStatus('loading')
+    try {
+      await subscribeLead({ data: { name, email } })
+      setStatus('success')
+      setName('')
+      setEmail('')
+    } catch {
+      setStatus('error')
+    }
+  }
+
+  if (status === 'success') {
+    return (
+      <div className="rounded-lg border border-gold/40 bg-gold/10 p-6 text-sm text-foreground">
+        ¡Gracias{name ? `, ${name}` : ''}! Ya quedaste registrado — pronto vas a
+        recibir contenido de valor directo a tu correo.
+      </div>
+    )
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="rounded-lg border border-border bg-card p-6"
+    >
+      <h3 className="font-serif text-xl font-semibold">
+        Recibe contenido de valor
+      </h3>
+      <p className="mt-1 text-sm text-muted-foreground">
+        Déjame tu nombre y correo para enviarte contenido sobre protección
+        financiera y disciplina — sin spam.
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+        <input
+          type="text"
+          placeholder="Tu nombre"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        />
+        <input
+          type="email"
+          required
+          placeholder="Tu correo"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        />
+        <Button
+          type="submit"
+          disabled={status === 'loading'}
+          className="bg-gold text-primary hover:bg-gold/90"
+        >
+          {status === 'loading' ? 'Enviando…' : 'Suscribirme'}
+        </Button>
+      </div>
+      {status === 'error' && (
+        <p className="mt-2 text-sm text-destructive">
+          Hubo un problema al registrarte. Intenta de nuevo o escríbeme por
+          WhatsApp.
+        </p>
+      )}
+    </form>
+  )
+}
+
 function Contacto() {
   useEffect(() => {
     if (document.getElementById('calendly-widget-script')) return
@@ -486,6 +622,9 @@ function Contacto() {
       <p className="mt-3 max-w-xl text-muted-foreground">
         15 minutos, sin costo y sin compromiso. O agenda directo aquí abajo:
       </p>
+      <div className="mt-8">
+        <NewsletterForm />
+      </div>
       <div className="mt-8 overflow-hidden rounded-lg border border-border">
         <div
           className="calendly-inline-widget"
