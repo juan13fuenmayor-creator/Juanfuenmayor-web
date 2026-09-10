@@ -31,6 +31,15 @@ export const Route = createRootRoute({
       { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
       { rel: 'manifest', href: '/manifest.json' },
     ],
+    scripts: [
+      { src: 'https://www.googletagmanager.com/gtag/js?id=G-VC2L22PG3X', async: true },
+      {
+        children: `window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-VC2L22PG3X');`,
+      },
+    ],
   }),
   shellComponent: RootDocument,
 })
