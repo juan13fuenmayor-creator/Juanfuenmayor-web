@@ -39,6 +39,9 @@ function gtag(){dataLayer.push(arguments);}
 gtag('js', new Date());
 gtag('config', 'G-VC2L22PG3X');`,
       },
+      {
+        children: `function loadScript(a){var b=document.getElementsByTagName("head")[0],c=document.createElement("script");c.type="text/javascript",c.src="https://tracker.metricool.com/resources/be.js",c.onreadystatechange=a,c.onload=a,b.appendChild(c)}loadScript(function(){beTracker.t({hash:"8408df473c4cc10c1748a9f0ba40db0"})});`,
+      },
     ],
   }),
   shellComponent: RootDocument,
